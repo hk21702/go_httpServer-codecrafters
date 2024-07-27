@@ -25,14 +25,8 @@ func listen() (exit_code int) {
 		return 1
 	}
 
-	var conn net.Conn
 	for {
-		if conn != nil {
-			conn.Close()
-			conn = nil
-		}
-
-		conn, err = l.Accept()
+		conn, err := l.Accept()
 		if err != nil {
 			fmt.Println("Error accepting connection: ", err.Error())
 			return 1
@@ -68,8 +62,6 @@ func handleConnection(conn net.Conn) {
 	}
 	// Default response
 	writeToConnection(conn, []byte("HTTP/1.1 404 Not Found\r\n\r\n"))
-	conn.Close()
-	return
 }
 
 // Helper function to write to the connection
