@@ -38,37 +38,38 @@ func listen() (exit_code int) {
 			return 1
 		}
 
-		defer conn.Close()
-		// start listening
-		message := readFromConnection(conn)
-		req, err := parseHTTPRequest(message)
-
-		if err != nil {
-			fmt.Println("There was an error prasing the HTTPRequest. Discarding.")
-			conn.Close()
-			continue
-		}
-
-		if req.Method == "GET" && req.Target == "/" {
-			writeToConnection(conn, []byte("HTTP/1.1 200 OK\r\n\r\n"))
-			conn.Close()
-			continue
-		} else if req.Method == "GET" && strings.SplitN(req.Target, "/", 3)[1] == "echo" {
-			body := strings.SplitN(req.Target, "/", 3)[2]
-			response := bodyResponse(200, body)
-			writeToConnection(conn, []byte(response))
-			conn.Close()
-			continue
-		} else if req.Method == "GET" && req.Target == "/user-agent" {
-			response := bodyResponse(200, req.UserAgent)
-			writeToConnection(conn, []byte(response))
-			conn.Close()
-			continue
-		}
-		// Default response
-		writeToConnection(conn, []byte("HTTP/1.1 404 Not Found\r\n\r\n"))
-		conn.Close()
+		go handleConnection(conn)
 	}
+}
+
+func handleConnection(conn net.Conn) {
+	defer conn.Close()
+	// start listening
+	message := readFromConnection(conn)
+	req, err := parseHTTPRequest(message)
+
+	if err != nil {
+		fmt.Println("There was an error prasing the HTTPRequest. Discarding.")
+		return
+	}
+
+	if req.Method == "GET" && req.Target == "/" {
+		writeToConnection(conn, []byte("HTTP/1.1 200 OK\r\n\r\n"))
+		return
+	} else if req.Method == "GET" && strings.SplitN(req.Target, "/", 3)[1] == "echo" {
+		body := strings.SplitN(req.Target, "/", 3)[2]
+		response := bodyResponse(200, body)
+		writeToConnection(conn, []byte(response))
+		return
+	} else if req.Method == "GET" && req.Target == "/user-agent" {
+		response := bodyResponse(200, req.UserAgent)
+		writeToConnection(conn, []byte(response))
+		return
+	}
+	// Default response
+	writeToConnection(conn, []byte("HTTP/1.1 404 Not Found\r\n\r\n"))
+	conn.Close()
+	return
 }
 
 // Helper function to write to the connection
