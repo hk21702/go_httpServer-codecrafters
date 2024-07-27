@@ -177,7 +177,7 @@ func handlePOSTRequest(req httpRequest) (response []byte, err error) {
 				return res.ByteResponse(true)
 			}
 
-			res.ResponseCode = 200
+			res.ResponseCode = 201
 		}
 	default:
 		{
