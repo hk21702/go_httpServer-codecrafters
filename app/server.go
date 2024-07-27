@@ -20,7 +20,7 @@ func main() {
 	directory := flag.String("directory", "", "Directory to serve files from")
 	flag.Parse()
 
-	fmt.Println("Serving files from directory:", directory)
+	fmt.Println("Serving files from directory:", *directory)
 
 	os.Exit(listen(*directory))
 }
@@ -207,7 +207,7 @@ func fileResponse(responseCode int, file []byte) (byteResponse []byte) {
 		strResponse = "HTTP/1.1 404 Not Found"
 	}
 	strResponse += "\r\n"
-	strResponse += "Content-Type: text/plain\r\n"
+	strResponse += "Content-Type: application/octet-stream\r\n"
 	strResponse += fmt.Sprintf("Content-Length: %d\r\n", len(file))
 	strResponse += "\r\n"
 	byteResponse = append(byteResponse, []byte(strResponse)...)
