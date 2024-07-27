@@ -3,7 +3,10 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"errors"
+	"flag"
 	"fmt"
+	"io/fs"
 	"strings"
 
 	// Uncomment this block to pass the first stage
@@ -14,11 +17,15 @@ import (
 func main() {
 	// You can use print statements as follows for debugging, they'll be visible when running tests.
 	fmt.Println("Logs from your program will appear here!")
+	directory := flag.String("directory", "", "Directory to serve files from")
+	flag.Parse()
 
-	os.Exit(listen())
+	fmt.Println("Serving files from directory:", directory)
+
+	os.Exit(listen(*directory))
 }
 
-func listen() (exit_code int) {
+func listen(dir string) (exit_code int) {
 	l, err := net.Listen("tcp", "0.0.0.0:4221")
 	if err != nil {
 		fmt.Println("Failed to bind to port 4221")
@@ -32,11 +39,11 @@ func listen() (exit_code int) {
 			return 1
 		}
 
-		go handleConnection(conn)
+		go handleConnection(conn, dir)
 	}
 }
 
-func handleConnection(conn net.Conn) {
+func handleConnection(conn net.Conn, directory string) {
 	defer conn.Close()
 	// start listening
 	message := readFromConnection(conn)
@@ -49,19 +56,31 @@ func handleConnection(conn net.Conn) {
 
 	if req.Method == "GET" && req.Target == "/" {
 		writeToConnection(conn, []byte("HTTP/1.1 200 OK\r\n\r\n"))
-		return
 	} else if req.Method == "GET" && strings.SplitN(req.Target, "/", 3)[1] == "echo" {
 		body := strings.SplitN(req.Target, "/", 3)[2]
 		response := bodyResponse(200, body)
 		writeToConnection(conn, []byte(response))
-		return
 	} else if req.Method == "GET" && req.Target == "/user-agent" {
 		response := bodyResponse(200, req.UserAgent)
 		writeToConnection(conn, []byte(response))
-		return
+	} else if req.Method == "GET" && strings.SplitN(req.Target, "/", 3)[1] == "files" {
+		file := strings.SplitN(req.Target, "/", 3)[2]
+		_, err := os.Stat(directory + file)
+		if errors.Is(err, fs.ErrNotExist) {
+			writeToConnection(conn, []byte("HTTP/1.1 404 Not Found\r\n\r\n"))
+		} else {
+			file, err := os.ReadFile(directory + file)
+			if err != nil {
+				fmt.Println("Error reading file:", err.Error())
+				return
+			}
+
+			bytesBody := fileResponse(200, file)
+			writeToConnection(conn, bytesBody)
+		}
+	} else {
+		writeToConnection(conn, []byte("HTTP/1.1 404 Not Found\r\n\r\n"))
 	}
-	// Default response
-	writeToConnection(conn, []byte("HTTP/1.1 404 Not Found\r\n\r\n"))
 }
 
 // Helper function to write to the connection
@@ -177,6 +196,24 @@ func bodyResponse(responseCode int, body string) (fullResponse string) {
 	fullResponse += body
 
 	return fullResponse
+}
+
+func fileResponse(responseCode int, file []byte) (byteResponse []byte) {
+	var strResponse string
+	switch responseCode {
+	case 200:
+		strResponse = "HTTP/1.1 200 OK"
+	default:
+		strResponse = "HTTP/1.1 404 Not Found"
+	}
+	strResponse += "\r\n"
+	strResponse += "Content-Type: text/plain\r\n"
+	strResponse += fmt.Sprintf("Content-Length: %d\r\n", len(file))
+	strResponse += "\r\n"
+	byteResponse = append(byteResponse, []byte(strResponse)...)
+	byteResponse = append(byteResponse, file...)
+
+	return byteResponse
 }
 
 type HTTPRequest struct {
