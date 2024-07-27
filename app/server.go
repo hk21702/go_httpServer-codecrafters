@@ -252,8 +252,7 @@ func handleGETRequest(req httpRequest) (response []byte, err error) {
 			}
 		}
 	default:
-		res.ResponseCode = 400
-		res.Body = []byte("Invalid target")
+		res.ResponseCode = 404
 	}
 
 	return res.ByteResponse(true)
