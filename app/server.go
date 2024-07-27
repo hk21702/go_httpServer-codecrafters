@@ -6,7 +6,9 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"io/fs"
+	"strconv"
 	"strings"
 
 	// Uncomment this block to pass the first stage
@@ -54,33 +56,75 @@ func handleConnection(conn net.Conn, directory string) {
 		return
 	}
 
-	if req.Method == "GET" && req.Target == "/" {
-		writeToConnection(conn, []byte("HTTP/1.1 200 OK\r\n\r\n"))
-	} else if req.Method == "GET" && strings.SplitN(req.Target, "/", 3)[1] == "echo" {
-		body := strings.SplitN(req.Target, "/", 3)[2]
-		response := bodyResponse(200, body)
-		writeToConnection(conn, []byte(response))
-	} else if req.Method == "GET" && req.Target == "/user-agent" {
-		response := bodyResponse(200, req.UserAgent)
-		writeToConnection(conn, []byte(response))
-	} else if req.Method == "GET" && strings.SplitN(req.Target, "/", 3)[1] == "files" {
-		file := strings.SplitN(req.Target, "/", 3)[2]
-		_, err := os.Stat(directory + file)
-		if errors.Is(err, fs.ErrNotExist) {
-			writeToConnection(conn, []byte("HTTP/1.1 404 Not Found\r\n\r\n"))
-		} else {
-			file, err := os.ReadFile(directory + file)
-			if err != nil {
-				fmt.Println("Error reading file:", err.Error())
-				return
+	var response []byte
+
+	switch req.Method {
+	case "GET":
+		{
+			targetParts := strings.SplitN(req.Target, "/", 3)
+			if len(targetParts) == 1 && targetParts[0] == "/" {
+				response = []byte("HTTP/1.1 200 OK\r\n\r\n")
+				break
 			}
 
-			bytesBody := fileResponse(200, file)
-			writeToConnection(conn, bytesBody)
+			switch targetParts[1] {
+			case "echo":
+				response = bodyResponse(200, []byte(targetParts[2]))
+			case "user-agent":
+				response = bodyResponse(200, []byte(req.UserAgent))
+			case "files":
+				{
+					file := strings.SplitN(req.Target, "/", 3)[2]
+					_, err := os.Stat(directory + file)
+
+					if errors.Is(err, fs.ErrNotExist) {
+						response = []byte("HTTP/1.1 404 Not Found\r\n\r\n")
+					} else {
+						file, err := os.ReadFile(directory + file)
+						if err != nil {
+							fmt.Println("Error reading file:", err.Error())
+							return
+						}
+
+						response = fileResponse(200, file)
+					}
+
+				}
+			default:
+				response = []byte("HTTP/1.1 404 Not Found\r\n\r\n")
+			}
 		}
-	} else {
-		writeToConnection(conn, []byte("HTTP/1.1 404 Not Found\r\n\r\n"))
+	case "POST":
+		{
+			targetParts := strings.SplitN(req.Target, "/", 3)
+			if len(targetParts) == 1 && targetParts[0] == "/" {
+				response = []byte("HTTP/1.1 200 OK\r\n\r\n")
+				break
+			}
+
+			switch targetParts[1] {
+			case "files":
+				{
+					path := directory + targetParts[2]
+					err = os.WriteFile(path, []byte(req.Body), 0755)
+					if err != nil {
+						fmt.Println("Error writing file:", path)
+						return
+					}
+
+					response = []byte("HTTP/1.1 201 Created\r\n\r\n")
+				}
+			}
+		}
+	default:
+		{
+			fmt.Println("Invalid request type:", req.Method)
+			response = []byte("HTTP/1.1 404 Not Found\r\n\r\n")
+		}
 	}
+
+	writeToConnection(conn, response)
+
 }
 
 // Helper function to write to the connection
@@ -151,18 +195,42 @@ func parseHTTPRequest(message []byte) (req HTTPRequest, err error) {
 			req.UserAgent = parts[1]
 		case "accept":
 			req.Accept = parts[1]
+		case "content-type":
+			req.ContentType = parts[1]
+		case "content-length":
+			{
+				num, err := strconv.Atoi(parts[1])
+				if err != nil {
+					fmt.Println("Error parsing content-length", parts[1])
+					req.ContentLength = -1
+				} else {
+					req.ContentLength = num
+				}
+			}
 		default:
 			fmt.Println("Error parsing header part. Unknown label:", parts[0])
 		}
 	}
 
-	// Body if it exists
-	body, err := readLine(reader)
-	if err == nil {
-		req.Body = body
-	} else if err.Error() != "EOF" {
-		fmt.Println("Error trying to parse body:", err.Error())
-		return
+	if req.ContentLength != -1 {
+		buff := make([]byte, req.ContentLength)
+		_, err = io.ReadFull(reader, buff)
+		if err != nil {
+			fmt.Println("Error filling buffer from body")
+			return
+		}
+		req.Body = buff
+
+	} else {
+		// Body if it exists
+		var body string
+		body, err = readLine(reader)
+		if err == nil {
+			req.Body = []byte(body)
+		} else if err.Error() != "EOF" {
+			fmt.Println("Error trying to parse body:", err.Error())
+			return
+		}
 	}
 
 	return req, nil
@@ -182,7 +250,9 @@ func readLine(reader *bufio.Reader) (lineStr string, err error) {
 	}
 }
 
-func bodyResponse(responseCode int, body string) (fullResponse string) {
+func bodyResponse(responseCode int, body []byte) []byte {
+	var fullResponse string
+
 	switch responseCode {
 	case 200:
 		fullResponse = "HTTP/1.1 200 OK"
@@ -193,9 +263,8 @@ func bodyResponse(responseCode int, body string) (fullResponse string) {
 	fullResponse += "Content-Type: text/plain\r\n"
 	fullResponse += fmt.Sprintf("Content-Length: %d\r\n", len(body))
 	fullResponse += "\r\n"
-	fullResponse += body
 
-	return fullResponse
+	return append([]byte(fullResponse), body...)
 }
 
 func fileResponse(responseCode int, file []byte) (byteResponse []byte) {
@@ -217,12 +286,14 @@ func fileResponse(responseCode int, file []byte) (byteResponse []byte) {
 }
 
 type HTTPRequest struct {
-	Line        string
-	Body        string
-	Method      string
-	Target      string
-	HTTPVersion string
-	Host        string // Server host and port
-	UserAgent   string // Client user agent
-	Accept      string // Media types the client accepts
+	Line          string
+	Body          []byte
+	Method        string
+	Target        string
+	HTTPVersion   string
+	Host          string // Server host and port
+	UserAgent     string // Client user agent
+	Accept        string // Media types the client accepts
+	ContentType   string
+	ContentLength int
 }
