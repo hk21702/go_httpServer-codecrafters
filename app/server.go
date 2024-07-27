@@ -59,6 +59,11 @@ func listen() (exit_code int) {
 			writeToConnection(conn, []byte(response))
 			conn.Close()
 			continue
+		} else if req.Method == "GET" && req.Target == "/user-agent" {
+			response := bodyResponse(200, req.UserAgent)
+			writeToConnection(conn, []byte(response))
+			conn.Close()
+			continue
 		}
 		// Default response
 		writeToConnection(conn, []byte("HTTP/1.1 404 Not Found\r\n\r\n"))
