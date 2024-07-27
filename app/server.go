@@ -16,7 +16,7 @@ import (
 )
 
 const maxMessageSize uint32 = 1 << 30 // 1GB (2^30 bytes)
-var serverDirectory string            // Global var. Directory to serve files from
+var serverDirectory *string            // Global var. Directory to serve files from
 var statusLines map[int]string        // Global var. Map to store status lines
 
 func init() {
@@ -31,7 +31,7 @@ func init() {
 }
 
 func main() {
-	serverDirectory = *flag.String("directory", "", "Directory to serve files from")
+	serverDirectory = flag.String("directory", "", "Directory to serve files from")
 	flag.Parse()
 
 	fmt.Println("Serving files from directory:", serverDirectory)
@@ -169,7 +169,7 @@ func handlePOSTRequest(req httpRequest) (response []byte, err error) {
 				return res.ByteResponse(true)
 			}
 
-			path := serverDirectory + targetParts[2]
+			path := *serverDirectory + targetParts[2]
 			err = os.WriteFile(path, []byte(req.Body), 0755)
 			if err != nil {
 				fmt.Printf("Error writing file %s: %s", path, err.Error())
@@ -231,7 +231,7 @@ func handleGETRequest(req httpRequest) (response []byte, err error) {
 				return res.ByteResponse(true)
 			}
 			fileRelPath := targetParts[2]
-			_, err = os.Stat(serverDirectory + fileRelPath)
+			_, err = os.Stat(*serverDirectory + fileRelPath)
 
 			if errors.Is(err, fs.ErrNotExist) {
 				res.ResponseCode = 404
@@ -241,7 +241,7 @@ func handleGETRequest(req httpRequest) (response []byte, err error) {
 				res.ResponseCode = 500
 				return res.ByteResponse(true)
 			} else {
-				file, err := os.ReadFile(serverDirectory + fileRelPath)
+				file, err := os.ReadFile(*serverDirectory + fileRelPath)
 				if err != nil {
 					fmt.Println("Error reading file:", err.Error())
 					res.ResponseCode = 500
