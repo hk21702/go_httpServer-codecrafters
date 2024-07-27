@@ -12,6 +12,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 )
 
 const maxMessageSize uint32 = 1 << 30 // 1GB (2^30 bytes)
@@ -69,6 +70,7 @@ func listen() (exit_code int) {
 }
 
 func handleConnection(conn net.Conn) {
+	fmt.Println("Handling new connection")
 	defer conn.Close()
 	// start listening
 	message, err := readFromConnection(conn)
@@ -267,15 +269,26 @@ func writeToConnection(conn net.Conn, output []byte) bool {
 }
 
 func readFromConnection(conn net.Conn) (fullMessage []byte, err error) {
-	limitedReader := io.LimitedReader{R: conn, N: int64(maxMessageSize) + 1}
-	fullMessage, err = io.ReadAll(&limitedReader)
+	buffer := make([]byte, 1024)
+	conn.SetReadDeadline(time.Now().Add(20 * time.Second))
 
-	if err != nil {
-		return nil, fmt.Errorf("Error reading from connection: %w", err)
-	}
+	for {
+		n, err := conn.Read(buffer)
 
-	if limitedReader.N <= 0 {
-		return nil, fmt.Errorf("message from connection exceeded limit of %d bytes", maxMessageSize)
+		if err != nil {
+			return nil, fmt.Errorf("Error reading from connection: %w", err)
+		}
+
+		fullMessage = append(fullMessage, buffer[:n]...)
+
+		if len(fullMessage) > int(maxMessageSize) {
+			return nil, fmt.Errorf("message from connection exceeded limit of %d bytes", maxMessageSize)
+		}
+
+		if n < len(buffer) {
+			// Completed reading
+			break
+		}
 	}
 
 	return fullMessage, nil
@@ -455,7 +468,7 @@ func (resp *httpResponse) ByteResponse(mutate bool) (byteResponse []byte, err er
 		if resp.ContentType != "" {
 			headers["Content-Type"] = resp.ContentType
 		}
-		headers["Content-Length"] = fmt.Sprintf("Content-Length: %d\r\n", resp.GetContentLength())
+		headers["Content-Length"] = fmt.Sprintf("%d", resp.GetContentLength())
 	}
 
 	for key, value := range headers {
@@ -492,7 +505,7 @@ func (resp httpResponse) SafeEncode() (newRespObject *httpResponse, err error) {
 // Does no action if the body is nil.
 // Returns the error if encoding failed, nil otherwise
 func (resp *httpResponse) Encode() (err error) {
-	if resp.Body == nil {
+	if resp.Body == nil || resp.EncodingMethod == ""{
 		// Nothing to encode. Return
 		return err
 	}
