@@ -25,8 +25,14 @@ func listen() (exit_code int) {
 		return 1
 	}
 
+	var conn net.Conn
 	for {
-		conn, err := l.Accept()
+		if conn != nil {
+			conn.Close()
+			conn = nil
+		}
+
+		conn, err = l.Accept()
 		if err != nil {
 			fmt.Println("Error accepting connection: ", err.Error())
 			return 1
@@ -45,6 +51,12 @@ func listen() (exit_code int) {
 
 		if req.Method == "GET" && req.Target == "/" {
 			writeToConnection(conn, []byte("HTTP/1.1 200 OK\r\n\r\n"))
+			conn.Close()
+			continue
+		} else if req.Method == "GET" && strings.SplitN(req.Target, "/", 3)[1] == "echo" {
+			body := strings.SplitN(req.Target, "/", 3)[2]
+			response := bodyResponse(200, body)
+			writeToConnection(conn, []byte(response))
 			conn.Close()
 			continue
 		}
@@ -139,7 +151,7 @@ func parseHTTPRequest(message []byte) (req HTTPRequest, err error) {
 	return req, nil
 }
 
-func readLine(reader *bufio.Reader) (line_str string, err error) {
+func readLine(reader *bufio.Reader) (lineStr string, err error) {
 	var line []byte
 	for {
 		part, isPrefix, err := reader.ReadLine()
@@ -151,6 +163,22 @@ func readLine(reader *bufio.Reader) (line_str string, err error) {
 			return string(line), nil
 		}
 	}
+}
+
+func bodyResponse(responseCode int, body string) (fullResponse string) {
+	switch responseCode {
+	case 200:
+		fullResponse = "HTTP/1.1 200 OK"
+	default:
+		fullResponse = "HTTP/1.1 404 Not Found"
+	}
+	fullResponse += "\r\n"
+	fullResponse += "Content-Type: text/plain\r\n"
+	fullResponse += fmt.Sprintf("Content-Length: %d\r\n", len(body))
+	fullResponse += "\r\n"
+	fullResponse += body
+
+	return fullResponse
 }
 
 type HTTPRequest struct {
