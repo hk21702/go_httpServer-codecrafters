@@ -61,11 +61,11 @@ func handleConnection(conn net.Conn, directory string) {
 	switch req.Method {
 	case "GET":
 		{
-			targetParts := strings.SplitN(req.Target, "/", 3)
-			if len(targetParts) == 1 && targetParts[0] == "/" {
+			if req.Target == "/" {
 				response = []byte("HTTP/1.1 200 OK\r\n\r\n")
 				break
 			}
+			targetParts := strings.SplitN(req.Target, "/", 3)
 
 			switch targetParts[1] {
 			case "echo":
