@@ -16,7 +16,7 @@ import (
 )
 
 const maxMessageSize uint32 = 1 << 30 // 1GB (2^30 bytes)
-var serverDirectory *string            // Global var. Directory to serve files from
+var serverDirectory *string           // Global var. Directory to serve files from
 var statusLines map[int]string        // Global var. Map to store status lines
 
 func init() {
@@ -204,7 +204,7 @@ func handleGETRequest(req httpRequest) (response []byte, err error) {
 	}
 
 	res := httpResponse{
-		EncodingMethod: req.AcceptEncoding,
+		AcceptEncoding: req.AcceptEncoding,
 	}
 
 	targetParts := strings.SplitN(req.Target, "/", 3)
@@ -346,8 +346,12 @@ func parseHTTPRequest(message []byte) (req httpRequest, err error) {
 				}
 			}
 		case "accept-encoding":
-			req.AcceptEncoding = parts[1]
-
+			{
+				req.AcceptEncoding = strings.Split(parts[1], ",")
+				for i, v := range req.AcceptEncoding {
+					req.AcceptEncoding[i] = strings.TrimSpace(v)
+				}
+			}
 		default:
 			fmt.Println("Error parsing header part. Unknown label:", parts[0])
 		}
@@ -402,13 +406,14 @@ type httpRequest struct {
 	Accept         string // Media types the client accepts
 	ContentType    string
 	ContentLength  int
-	AcceptEncoding string
+	AcceptEncoding []string
 }
 
 type httpResponse struct {
 	ResponseCode   int
 	ContentType    string
 	EncodingMethod string
+	AcceptEncoding []string
 	Encoded        bool
 	Body           []byte
 }
@@ -504,24 +509,22 @@ func (resp httpResponse) SafeEncode() (newRespObject *httpResponse, err error) {
 // Does no action if the body is nil.
 // Returns the error if encoding failed, nil otherwise
 func (resp *httpResponse) Encode() (err error) {
-	if resp.Body == nil || resp.EncodingMethod == ""{
+	if resp.Body == nil {
 		// Nothing to encode. Return
 		return err
 	}
 
-	switch resp.EncodingMethod {
-	case "gzip":
-		break
-	default:
-		{
-			err = &UnsupportedEncodingError{Method: resp.EncodingMethod}
-			resp.EncodingMethod = ""
-			resp.Encoded = false
-			return err
+	for _, candidateMethod := range resp.AcceptEncoding {
+		switch candidateMethod {
+		case "gzip":
+			{
+				resp.EncodingMethod = candidateMethod
+				resp.Encoded = true
+				return nil
+			}
 		}
 	}
 
-	resp.Encoded = true
 	return nil
 }
 
