@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"compress/gzip"
 	"errors"
 	"flag"
 	"fmt"
@@ -518,6 +519,18 @@ func (resp *httpResponse) Encode() (err error) {
 		switch candidateMethod {
 		case "gzip":
 			{
+				var buffer bytes.Buffer
+				gzipWriter := gzip.NewWriter(&buffer)
+				_, err := gzipWriter.Write(resp.Body)
+				if err != nil {
+					return err
+				}
+				err = gzipWriter.Close()
+				if err != nil {
+					return err
+				}
+
+				resp.Body = buffer.Bytes()
 				resp.EncodingMethod = candidateMethod
 				resp.Encoded = true
 				return nil
